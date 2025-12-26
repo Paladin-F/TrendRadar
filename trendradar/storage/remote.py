@@ -95,12 +95,21 @@ class RemoteStorageBackend(StorageBackend):
         # 根据服务商选择签名版本：
         # - 腾讯云 COS 使用 SigV2 以避免 chunked encoding 问题
         # - 其他服务商（AWS S3、Cloudflare R2、阿里云 OSS、MinIO 等）默认使用 SigV4
+        # 检测是否是群晖C2存储或腾讯云COS，这些服务使用SigV2以避免chunked encoding问题
+        is_synology_c2 = "synologyc2.net" in endpoint_url.lower()
         is_tencent_cos = "myqcloud.com" in endpoint_url.lower()
-        signature_version = 's3' if is_tencent_cos else 's3v4'
-
+        
+        # 对C2存储和腾讯云COS使用SigV2，其他服务商使用SigV4
+        signature_version = 's3' if (is_tencent_cos or is_synology_c2) else 's3v4'
+        
+        # 配置S3客户端参数，针对C2存储使用path方式
         s3_config = BotoConfig(
-            s3={"addressing_style": "virtual"},
+            s3={
+                "addressing_style": "path",  # 使用path方式，适用于C2存储
+            },
             signature_version=signature_version,
+            # 禁用参数验证以提高兼容性
+            parameter_validation=False,
         )
 
         client_kwargs = {
@@ -118,7 +127,7 @@ class RemoteStorageBackend(StorageBackend):
         self._downloaded_files: List[Path] = []
         self._db_connections: Dict[str, sqlite3.Connection] = {}
 
-        print(f"[远程存储] 初始化完成，存储桶: {bucket_name}，签名版本: {signature_version}")
+        print(f"[远程存储] 初始化完成，存储桶: {bucket_name}，签名版本: {signature_version}，端点: {endpoint_url}")
 
     @property
     def backend_name(self) -> str:
